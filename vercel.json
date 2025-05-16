@@ -1,16 +1,9 @@
-{ 
-    "version": 2,
-    "name": "inst377-final-project",
-    "builds": [
-        { 
-            "src": "./index.js", 
-            "use": "@vercel/node" 
-        }
-    ],
-    "routes": [
-        { 
-            "src": "/(.*)", 
-            "dest": "/" 
-        }
-    ]
+{
+  "version": 2,
+  "framework": "static",
+  "outputDirectory": ".",
+  "routes": [
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/house-search.html" }
+  ]
 }
