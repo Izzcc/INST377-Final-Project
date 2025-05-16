@@ -54,19 +54,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   initCountyMapping();
 });
 
-let isLocalStorageCacheAvailable = false;
-const CACHE_KEY = 'property_data_cache';
-const CACHE_EXPIRY_KEY = 'property_data_cache_expiry';
-const CACHE_DURATION = 60 * 60 * 1000; // 1 hour in milliseconds
-
 async function loadProperties() {
   try {
-    // Check for cached data first
-    if (checkCachedData()) {
-      console.log("Using cached property data");
-      return;
-    }
-    
     console.log("Trying to load from Supabase...");
     const { data, error } = await supabase
       .from('properties')
@@ -77,22 +66,20 @@ async function loadProperties() {
       console.log('Data retrieved from Supabase:', data.length);
       allProperties = data;
       filteredProperties = data;
-      saveToCache(data);
       return;
     }
     
     // Fallback to local JSON if Supabase fails
     console.log("Falling back to local JSON...");
-    await loadFromLocalJson();
+    const propertyRes = await fetch("zillow_data.json");
+    if (!propertyRes.ok) throw new Error(`HTTP error ${propertyRes.status}`);
+    
+    const propertyData = await propertyRes.json();
+    console.log('Data loaded from local JSON:', propertyData.length);
+    allProperties = propertyData;
+    filteredProperties = propertyData;
   } catch (err) {
     console.error("Failed to load properties:", err);
-    
-    // Try to recover from cache even if it's expired
-    if (loadExpiredCache()) {
-      console.log("Using expired cache as fallback");
-      return;
-    }
-    
     grid.innerHTML = `
       <div class="alert alert-danger w-100 text-center" role="alert">
         Failed to load listings. <button class="btn btn-sm btn-outline-danger" onclick="location.reload()">Try Again</button>
@@ -100,172 +87,6 @@ async function loadProperties() {
     `;
   }
 }
-
-// Load the large JSON file with fetch streaming and progressive parsing
-async function loadFromLocalJson() {
-  const response = await fetch("zillow_data.json");
-  if (!response.ok) throw new Error(`HTTP error ${response.status}`);
-  
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let chunks = "";
-  let propertyData = [];
-  
-  // Show progress indicator
-  const progressBar = document.createElement('div');
-  progressBar.className = 'progress mt-2';
-  progressBar.innerHTML = `
-    <div class="progress-bar progress-bar-striped progress-bar-animated" 
-         role="progressbar" aria-valuenow="0" aria-valuemin="0" 
-         aria-valuemax="100" style="width: 0%"></div>
-  `;
-  loadingMessage.appendChild(progressBar);
-  
-  try {
-    // Process the stream in chunks
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      
-      // Append the new chunk to our accumulated text
-      chunks += decoder.decode(value, { stream: true });
-      
-      // Try to find complete JSON objects
-      if (chunks.startsWith('[') && chunks.includes('}]')) {
-        try {
-          // Parse the JSON
-          propertyData = JSON.parse(chunks);
-          
-          // If we got here, parsing was successful
-          console.log('Data loaded from local JSON:', propertyData.length);
-          allProperties = propertyData;
-          filteredProperties = propertyData;
-          
-          // Save to cache
-          saveToCache(propertyData);
-          
-          // Start rendering first page immediately while keeping the full data
-          const firstPageData = propertyData.slice(0, listingsPerPage);
-          renderPropertiesPage(firstPageData, 1);
-          
-          // Show completion
-          progressBar.querySelector('.progress-bar').style.width = '100%';
-          setTimeout(() => {
-            loadingMessage.removeChild(progressBar);
-          }, 1000);
-          
-          break;
-        } catch (e) {
-          // Not complete JSON yet, continue reading
-          // Update progress bar (rough estimate)
-          const contentLength = response.headers.get('Content-Length');
-          if (contentLength) {
-            const progress = Math.round((chunks.length / parseInt(contentLength)) * 100);
-            progressBar.querySelector('.progress-bar').style.width = `${Math.min(progress, 95)}%`;
-          }
-        }
-      }
-    }
-  } catch (err) {
-    console.error("Error while streaming JSON:", err);
-    loadingMessage.removeChild(progressBar);
-    throw err;
-  }
-}
-
-// Check if we have valid cached data
-function checkCachedData() {
-  try {
-    const expiryTime = localStorage.getItem(CACHE_EXPIRY_KEY);
-    if (!expiryTime || Date.now() > parseInt(expiryTime)) {
-      return false;
-    }
-    
-    const cachedData = localStorage.getItem(CACHE_KEY);
-    if (!cachedData) return false;
-    
-    const data = JSON.parse(cachedData);
-    if (!Array.isArray(data) || data.length === 0) return false;
-    
-    console.log(`Retrieved ${data.length} properties from cache`);
-    allProperties = data;
-    filteredProperties = data;
-    isLocalStorageCacheAvailable = true;
-    return true;
-  } catch (err) {
-    console.error("Error checking cache:", err);
-    return false;
-  }
-}
-
-// Load expired cache as a fallback
-function loadExpiredCache() {
-  try {
-    const cachedData = localStorage.getItem(CACHE_KEY);
-    if (!cachedData) return false;
-    
-    const data = JSON.parse(cachedData);
-    if (!Array.isArray(data) || data.length === 0) return false;
-    
-    console.log(`Using expired cache with ${data.length} properties as fallback`);
-    allProperties = data;
-    filteredProperties = data;
-    return true;
-  } catch (err) {
-    console.error("Error loading expired cache:", err);
-    return false;
-  }
-}
-
-// Save data to localStorage cache
-function saveToCache(data) {
-  try {
-    // Don't try to cache if the data is too large
-    const dataStr = JSON.stringify(data);
-    
-    try {
-      localStorage.setItem(CACHE_KEY, dataStr);
-      localStorage.setItem(CACHE_EXPIRY_KEY, Date.now() + CACHE_DURATION);
-      isLocalStorageCacheAvailable = true;
-      console.log("Data saved to cache");
-    } catch (storageErr) {
-      // If localStorage fails (e.g., quota exceeded), try to save a smaller subset
-      if (data.length > 100) {
-        const smallerData = data.slice(0, 100);
-        localStorage.setItem(CACHE_KEY, JSON.stringify(smallerData));
-        localStorage.setItem(CACHE_EXPIRY_KEY, Date.now() + CACHE_DURATION);
-        console.log("Saved 100 properties to cache (reduced size)");
-      } else {
-        console.error("Failed to save to cache:", storageErr);
-      }
-    }
-  } catch (err) {
-    console.error("Error saving to cache:", err);
-  }
-}
-
-// Add a cache clear function for debugging
-function clearPropertyCache() {
-  localStorage.removeItem(CACHE_KEY);
-  localStorage.removeItem(CACHE_EXPIRY_KEY);
-  console.log("Property cache cleared");
-}
-
-// Update window.addEventListener to use the new caching system
-window.addEventListener("DOMContentLoaded", async () => {
-  // Show loading message 
-  grid.appendChild(loadingMessage);
-  
-  loadProperties().then(() => {
-    isPropertiesLoaded = true;
-    renderPropertiesPage(allProperties.slice(0, listingsPerPage), 1);
-    renderPagination(allProperties.length, 1);
-    grid.removeChild(loadingMessage);
-  });
-  
-  initZipDatabase();
-  initCountyMapping();
-});
 
 // Load ZIP database in the background
 async function initZipDatabase() {
