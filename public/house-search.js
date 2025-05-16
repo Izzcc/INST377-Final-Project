@@ -23,7 +23,7 @@ loadingMessage.innerHTML = `
 
 // Configuration
 const HUD_API_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJhdWQiOiI2IiwianRpIjoiODdkNjJjODNjYmNmMTRkZWEzMTZhNzE5OGQ3MmY1YzE0ZWViMjQyMTJlZWI3ZTcwYjhmZTFjMjlkMzA1YWJhMDQ5MGM1M2Q0ODlhOWU3NDMiLCJpYXQiOjE3NDU1OTc3ODYuNDI5MzczLCJuYmYiOjE3NDU1OTc3ODYuNDI5Mzc1LCJleHAiOjIwNjExMzA1ODYuNDIxNzk3LCJzdWIiOiI5NjUxOSIsInNjb3BlcyI6W119.ZfUECoLQ80NaT_NOxAZ5fWdkFjNCIgWpUwC-P0U_CJVwua4QNNltL3o2ZxrtWrmsGtnHM6lznN2X4eWQ_wOoAQ";
-const listingsPerPage = 12; 
+const listingsPerPage = 33; 
 
 // State
 let allProperties = [];
