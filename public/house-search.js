@@ -60,7 +60,7 @@ async function loadProperties() {
     const { data, error } = await supabase
       .from('properties')
       .select('*')
-      .limit(100); 
+      .range(0, 11); 
     
     if (data && data.length > 0 && !error) {
       console.log('Data retrieved from Supabase:', data.length);
