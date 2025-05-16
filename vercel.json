@@ -1,9 +1,7 @@
 {
   "version": 2,
-  "buildCommand": "",
-  "outputDirectory": ".",
   "routes": [
-    { "handle": "filesystem" },
-    { "src": "/(.*)", "dest": "/house-search.html" }
+    { "src": "/", "dest": "/house-search.html" },
+    { "src": "/(.*)", "dest": "/$1" }
   ]
 }
