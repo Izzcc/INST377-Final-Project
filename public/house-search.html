@@ -1,0 +1,76 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PropHunt House Search</title>
+
+    <!-- External Links -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" defer></script>
+
+
+    <!-- global links -->
+    <link rel="stylesheet" href="../global/global-style.css" />
+    <script src="../global/global-utils.js" defer></script>
+    
+
+    <!-- local links -->
+    <link rel="stylesheet" href="house-search.css">
+    <!-- <script src="house-search.js" defer></script> -->
+    <script type="module" src="house-search.js"></script>
+    
+</head>
+<body>
+
+  <nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container">
+      <a class="navbar-brand" href="house-search.html">PropHunt</a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarNav">
+        <ul class="navbar-nav ms-auto">
+          <li class="nav-item">
+            <a class="nav-link active" href="house-search.html">Property Search</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="rent-chart.html">Rent Charts</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="about.html">About Us</a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+  
+
+    <section class="container my-4">
+        <form id="filterForm" class="row g-3">
+          <div class="col-md-4">
+            <input type="text" id="locationFilter" class="form-control" placeholder="Filter by city">
+          </div>
+          <div class="col-md-4">
+            <input type="number" id="maxPriceFilter" class="form-control" placeholder="Max Price ($)">
+          </div>
+          <div class="col-md-4">
+            <button class="btn btn-primary w-100" type="submit">Apply Filters</button>
+          </div>
+        </form>
+      </section>
+      
+
+    <section class="property-grid" id="propertyGrid">
+        
+      </section>
+
+      <nav aria-label="Property page navigation" class="my-4">
+        <ul class="pagination justify-content-center" id="paginationControls"></ul>
+      </nav>
+      
+      
+    
+</body>
+</html>

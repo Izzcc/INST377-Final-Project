@@ -11,6 +11,10 @@ app.use(express.static(__dirname + '/public'));
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
+app.get('/', (req, res) => {
+    res.sendFile('/public/house-search.html', { root: __dirname });
+});
+
 app.get('/api/properties', async (req, res) => {
   const { data, error } = await supabase
     .from('properties')
@@ -25,3 +29,8 @@ app.get('/api/properties', async (req, res) => {
 });
 
 module.exports = app;
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server is running at http://localhost:${PORT}`);
+});
