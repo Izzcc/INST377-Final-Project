@@ -4,45 +4,116 @@ const supabaseUrl = 'https://pmhjugkkxjoiwmnonbfg.supabase.co'
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBtaGp1Z2treGpvaXdtbm9uYmZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDU1MTgwMjMsImV4cCI6MjA2MTA5NDAyM30.Um2dm12vXba4acloklBe41NGg8O9MQTZPO_6IesOFns'
 const supabase = createClient(supabaseUrl, supabaseKey)
 
-async function fetchData() {
-  const { data, error } = await supabase
-    .from('properties')
-    .select('*') 
-  
-  if (error) {
-    console.error('Error fetching data:', error)
-    return
-  }
-
-  console.log('Data retrieved:', data)
-  console.log('Number 0:', data[0].raw_data)
-}
-
-fetchData()
-
+// DOM Elements
 const grid = document.getElementById("propertyGrid");
 const pagination = document.getElementById("paginationControls");
 const form = document.getElementById("filterForm");
 const locationInput = document.getElementById("locationFilter");
 const maxPriceInput = document.getElementById("maxPriceFilter");
-const HUD_API_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJhdWQiOiI2IiwianRpIjoiODdkNjJjODNjYmNmMTRkZWEzMTZhNzE5OGQ3MmY1YzE0ZWViMjQyMTJlZWI3ZTcwYjhmZTFjMjlkMzA1YWJhMDQ5MGM1M2Q0ODlhOWU3NDMiLCJpYXQiOjE3NDU1OTc3ODYuNDI5MzczLCJuYmYiOjE3NDU1OTc3ODYuNDI5Mzc1LCJleHAiOjIwNjExMzA1ODYuNDIxNzk3LCJzdWIiOiI5NjUxOSIsInNjb3BlcyI6W119.ZfUECoLQ80NaT_NOxAZ5fWdkFjNCIgWpUwC-P0U_CJVwua4QNNltL3o2ZxrtWrmsGtnHM6lznN2X4eWQ_wOoAQ";
+const loadingMessage = document.createElement("div");
+loadingMessage.className = "loading-message";
+loadingMessage.innerHTML = `
+  <div class="text-center w-100 my-5">
+    <div class="spinner-border text-primary" role="status">
+      <span class="visually-hidden">Loading...</span>
+    </div>
+    <p class="mt-2">Loading properties...</p>
+  </div>
+`;
 
+// Configuration
+const HUD_API_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJhdWQiOiI2IiwianRpIjoiODdkNjJjODNjYmNmMTRkZWEzMTZhNzE5OGQ3MmY1YzE0ZWViMjQyMTJlZWI3ZTcwYjhmZTFjMjlkMzA1YWJhMDQ5MGM1M2Q0ODlhOWU3NDMiLCJpYXQiOjE3NDU1OTc3ODYuNDI5MzczLCJuYmYiOjE3NDU1OTc3ODYuNDI5Mzc1LCJleHAiOjIwNjExMzA1ODYuNDIxNzk3LCJzdWIiOiI5NjUxOSIsInNjb3BlcyI6W119.ZfUECoLQ80NaT_NOxAZ5fWdkFjNCIgWpUwC-P0U_CJVwua4QNNltL3o2ZxrtWrmsGtnHM6lznN2X4eWQ_wOoAQ";
+const listingsPerPage = 12; 
+
+// State
 let allProperties = [];
 let filteredProperties = [];
 let currentPage = 1;
-const listingsPerPage = 33;
-
-// Store ZIP to county mapping
-let zipToCounty = [];
-// Store all rent data by county and zip
+let zipToCounty = {};
 let allRentData = {};
-// Store FIPS code by county name for easier lookups
 let countyToFips = {};
+let isZipDatabaseLoaded = false;
+let isCountyMappingLoaded = false;
+let isPropertiesLoaded = false;
 
-// --- Initial Data Loading ---
+// --- INITIALIZATION & DATA LOADING  ---
 
-// Load county data first to build county-to-FIPS mapping
-async function loadCountyFipsMapping() {
+// Initialize the application with basics first
+window.addEventListener("DOMContentLoaded", async () => {
+  // Show loading message 
+  grid.appendChild(loadingMessage);
+  
+  loadProperties().then(() => {
+    isPropertiesLoaded = true;
+    renderPropertiesPage(allProperties, 1);
+    renderPagination(allProperties.length, 1);
+    grid.removeChild(loadingMessage);
+  });
+  
+  initZipDatabase();
+  initCountyMapping();
+});
+
+async function loadProperties() {
+  try {
+    console.log("Trying to load from Supabase...");
+    const { data, error } = await supabase
+      .from('properties')
+      .select('*')
+      .limit(100); 
+    
+    if (data && data.length > 0 && !error) {
+      console.log('Data retrieved from Supabase:', data.length);
+      allProperties = data;
+      filteredProperties = data;
+      return;
+    }
+    
+    // Fallback to local JSON if Supabase fails
+    console.log("Falling back to local JSON...");
+    const propertyRes = await fetch("zillow_data.json");
+    if (!propertyRes.ok) throw new Error(`HTTP error ${propertyRes.status}`);
+    
+    const propertyData = await propertyRes.json();
+    console.log('Data loaded from local JSON:', propertyData.length);
+    allProperties = propertyData;
+    filteredProperties = propertyData;
+  } catch (err) {
+    console.error("Failed to load properties:", err);
+    grid.innerHTML = `
+      <div class="alert alert-danger w-100 text-center" role="alert">
+        Failed to load listings. <button class="btn btn-sm btn-outline-danger" onclick="location.reload()">Try Again</button>
+      </div>
+    `;
+  }
+}
+
+// Load ZIP database in the background
+async function initZipDatabase() {
+  try {
+    const res = await fetch('zip_code_database.json');
+    if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+    const data = await res.json();
+    
+    // Convert array to lookup object for faster access
+    data.forEach(entry => {
+      const zip = String(entry.zip).padStart(5, '0');
+      zipToCounty[zip] = entry.county;
+    });
+    
+    isZipDatabaseLoaded = true;
+    console.log("ZIP database loaded:", Object.keys(zipToCounty).length);
+    
+    if (isPropertiesLoaded) {
+      updateRenderedProperties();
+    }
+  } catch (err) {
+    console.error("Failed to load ZIP database:", err);
+  }
+}
+
+// Load county mapping in the background
+async function initCountyMapping() {
   try {
     const url = `https://www.huduser.gov/hudapi/public/fmr/listCounties/MD`;
     const res = await fetch(url, {
@@ -55,47 +126,60 @@ async function loadCountyFipsMapping() {
     if (!res.ok) throw new Error(`HTTP error ${res.status}`);
     
     const counties = await res.json();
-    console.log("Counties loaded:", counties.length);
     
     // Build county-to-FIPS mapping
     counties.forEach(county => {
       countyToFips[county.county_name] = county.fips_code;
     });
     
-    console.log("County-to-FIPS mapping created:", Object.keys(countyToFips).length);
-    return counties;
+    isCountyMappingLoaded = true;
+    console.log("County mapping loaded:", Object.keys(countyToFips).length);
+    
+    loadPopularCountiesRentData(counties.slice(0, 5)); 
   } catch (err) {
-    console.error("Failed to load county FIPS mapping:", err);
-    return [];
+    console.error("Failed to load county mapping:", err);
   }
 }
 
-// Load ZIP to county mapping
-async function loadZipCodeDatabase() {
-  try {
-    const res = await fetch('zip_code_database.json');
-    if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-    zipToCounty = await res.json();
-    console.log("ZIP database loaded with", zipToCounty.length, "entries");
-  } catch (err) {
-    console.error("Failed to load ZIP database:", err);
-  }
-}
-
-// Fetch rent data for all counties
-async function loadAllCountyRentData(counties) {
+async function loadPopularCountiesRentData(counties) {
   try {
     const rentPromises = counties.map(county => fetchCountyRentData(county.fips_code));
     await Promise.all(rentPromises);
+    console.log("Initial rent data loaded for top counties");
     
-    console.log("All rent data loaded for", Object.keys(allRentData).length, "counties/zips");
+    // If properties are already rendered, update them with rent data
+    if (isPropertiesLoaded) {
+      updateRenderedProperties();
+    }
   } catch (err) {
-    console.error("Failed to load county data:", err);
+    console.error("Failed to load initial county rent data:", err);
+  }
+}
+
+// Load rent data for a specific zip code on demand
+async function loadRentDataForZip(zip) {
+  if (!zip || !isZipDatabaseLoaded || !isCountyMappingLoaded) return;
+  
+  const countyName = getCountyByZip(zip);
+  if (countyName === "N/A") return;
+  
+  const fips = getFipsByCountyName(countyName);
+  if (!fips || allRentData[fips]) return;
+  
+  try {
+    await fetchCountyRentData(fips);
+    console.log(`Rent data loaded for ${countyName} (zip: ${zip})`);
+    
+    updateRenderedProperties();
+  } catch (err) {
+    console.error(`Failed to load rent data for zip ${zip}:`, err);
   }
 }
 
 // Fetch rent data for a specific county
 async function fetchCountyRentData(fips) {
+  if (!fips || allRentData[fips]) return;
+  
   try {
     const url = `https://www.huduser.gov/hudapi/public/fmr/data/${fips}`;
     const res = await fetch(url, {
@@ -110,13 +194,11 @@ async function fetchCountyRentData(fips) {
     const result = await res.json();
     const rentData = result.data.basicdata;
     
-    // Store county-level data
     if (!Array.isArray(rentData)) {
       allRentData[fips] = {
         countyData: rentData
       };
     } else {
-      // Store ZIP-specific data
       allRentData[fips] = {
         countyData: rentData.find(item => item.zip_code === "MSA level") || null,
         zipData: {}
@@ -133,52 +215,58 @@ async function fetchCountyRentData(fips) {
   }
 }
 
-// --- Helper Functions ---
+// --- HELPER FUNCTIONS ---
 
 function getCountyByZip(zip) {
+  if (!isZipDatabaseLoaded) return "Loading...";
+  
   zip = String(zip).padStart(5, '0');
-  const entry = zipToCounty.find(row => String(row.zip).padStart(5, '0') === zip);
-  return entry ? entry.county : "N/A";
+  return zipToCounty[zip] || "N/A";
 }
 
 function getFipsByCountyName(countyName) {
+  if (!isCountyMappingLoaded) return null;
+  
   // Remove "County" suffix if present
   const cleanName = countyName.replace(/ County$/i, '').trim();
+  
   // Try direct match
   for (const name in countyToFips) {
     if (name.toLowerCase().includes(cleanName.toLowerCase())) {
       return countyToFips[name];
     }
   }
+  
   return null;
 }
 
 function getCountyFipsByZip(zip) {
+  if (!isZipDatabaseLoaded || !isCountyMappingLoaded) return null;
+  
   // First get the county name from the zip
   const countyName = getCountyByZip(zip);
-  if (countyName === "N/A") return null;
+  if (countyName === "N/A" || countyName === "Loading...") return null;
   
   // Then get the FIPS code for that county
-  const fips = getFipsByCountyName(countyName);
-  
-  if (fips && allRentData[fips]) {
-    // Check if this county has zip-specific data
-    if (allRentData[fips].zipData && allRentData[fips].zipData[zip]) {
-      return fips;
-    }
-    if (allRentData[fips].countyData) {
-      return fips;
-    }
-  }
-  
-  return null;
+  return getFipsByCountyName(countyName);
 }
 
 function estimateRent(zip, bedrooms) {
-  if (!zip) return "N/A";
+  if (!zip || !isZipDatabaseLoaded || !isCountyMappingLoaded) {
+    if (zip) loadRentDataForZip(zip);
+    return "Loading...";
+  }
   
   const fips = getCountyFipsByZip(zip);
-  if (!fips) return "N/A";
+  if (!fips) {
+    loadRentDataForZip(zip); 
+    return "Calculating...";
+  }
+  
+  if (!allRentData[fips]) {
+    loadRentDataForZip(zip); 
+    return "Calculating...";
+  }
   
   if (allRentData[fips]?.zipData?.[zip]) {
     const zipRentData = allRentData[fips].zipData[zip];
@@ -189,7 +277,7 @@ function estimateRent(zip, bedrooms) {
       case 2: return zipRentData["Two-Bedroom"] || "N/A";
       case 3: return zipRentData["Three-Bedroom"] || "N/A";
       case 4: case 5: case 6: return zipRentData["Four-Bedroom"] || "N/A";
-      default: return zipRentData["Two-Bedroom"] || "N/A"; // Default to 2BR if unknown
+      default: return zipRentData["Two-Bedroom"] || "N/A";
     }
   } 
   
@@ -206,7 +294,7 @@ function estimateRent(zip, bedrooms) {
     }
   }
   
-  //  fallback values
+  // Fallback values
   const basePrices = {
     0: 1100, 
     1: 1300, 
@@ -243,7 +331,11 @@ function estimateMortgage(price) {
 }
 
 function calculateCashflow(rent, mortgage) {
-  if (rent === "N/A" || mortgage === "N/A") return "N/A";
+  if (rent === "N/A" || mortgage === "N/A" || 
+      rent === "Loading..." || mortgage === "Loading..." ||
+      rent === "Calculating..." || mortgage === "Calculating...") {
+    return "Calculating...";
+  }
   
   const rentValue = typeof rent === 'string' ? parseInt(rent.replace(/[^0-9]/g, '')) : rent;
   const mortgageValue = typeof mortgage === 'string' ? parseInt(mortgage.replace(/[^0-9]/g, '')) : mortgage;
@@ -264,23 +356,27 @@ function parsePrice(priceStr) {
   return parseFloat(str);
 }
 
-// --- Rendering Functions ---
+// --- RENDERING FUNCTIONS ---
 
 function renderPropertiesPage(properties, page) {
   grid.innerHTML = "";
+  
+  if (properties.length === 0) {
+    grid.innerHTML = `
+      <div class="alert alert-info w-100 text-center" role="alert">
+        No listings found matching your criteria.
+      </div>
+    `;
+    return;
+  }
+  
   const start = (page - 1) * listingsPerPage;
   const end = start + listingsPerPage;
   const pageListings = properties.slice(start, end);
 
-  if (pageListings.length === 0) {
-    grid.innerHTML = `<p class="text-center w-100 text-danger">No listings found.</p>`;
-    return;
-  }
-
   pageListings.forEach((prop) => {
-
     const status = prop.statusText;
-    if (status.toLowerCase() == "auction") return; 
+    if (status && status.toLowerCase() === "auction") return; 
 
     const img = prop.image || prop.imgSrc || "https://via.placeholder.com/350x200";
     const price = prop.price || "N/A";
@@ -291,30 +387,83 @@ function renderPropertiesPage(properties, page) {
     const beds = prop.bedrooms || prop.beds || "N/A";
     const baths = prop.bathrooms || prop.baths || "N/A";
     const listingUrl = prop.listing_url || (prop.detailUrl ? `${prop.detailUrl}` : "#");
-
-    // Calculate financial metrics
+    
+    // Calculate financial metrics 
     const rentAmount = estimateRent(zip, beds);
     const mortgagePayment = estimateMortgage(price);
     const cashflow = calculateCashflow(rentAmount, mortgagePayment);
+    
+    const propId = `prop-${zip}-${beds}-${parsePrice(price)}`.replace(/[^a-zA-Z0-9-]/g, '');
 
     grid.innerHTML += `
-      <div class="card m-2 shadow" style="width: 20rem;">
-        <img src="${img}" class="card-img-top" alt="Property image">
+      <div class="card m-2 shadow prop-card" id="${propId}" style="width: 20rem;">
+        <img src="${img}" class="card-img-top" alt="Property image" loading="lazy">
         <div class="card-body">
           <h5 class="card-title">${city}, ${state} ${zip ? `(${zip})` : ''}</h5>
           <p class="card-text">
-            <strong>County:</strong> ${county}<br>
+            <strong>County:</strong> <span class="county-data">${county}</span><br>
             <strong>Price:</strong> ${price}<br>
             <strong>Bedrooms:</strong> ${beds} &nbsp; 
             <strong>Bathrooms:</strong> ${baths}<br>
-            <strong>Estimated Rent:</strong> $${rentAmount !== "N/A" ? rentAmount : "N/A"}<br>
-            <strong>Estimated Mortgage:</strong> $${mortgagePayment !== "N/A" ? mortgagePayment.toLocaleString() : "N/A"}<br>
-            <strong>Cashflow:</strong> ${cashflow}<br>
+            <strong>Estimated Rent:</strong> <span class="rent-data">$${rentAmount !== "N/A" ? rentAmount : "N/A"}</span><br>
+            <strong>Estimated Mortgage:</strong> <span class="mortgage-data">$${mortgagePayment !== "N/A" ? mortgagePayment.toLocaleString() : "N/A"}</span><br>
+            <strong>Cashflow:</strong> <span class="cashflow-data">${cashflow}</span><br>
             <a href="${listingUrl}" target="_blank" class="btn btn-sm btn-outline-primary mt-2">View Listing</a>
           </p>
         </div>
       </div>
     `;
+  });
+}
+
+// Function to update property cards with new data once it loads
+function updateRenderedProperties() {
+  document.querySelectorAll('.prop-card').forEach(card => {
+    // Extract ZIP and bedrooms from the card
+    const titleText = card.querySelector('.card-title').textContent;
+    const zipMatch = titleText.match(/\((\d{5})\)/);
+    const zip = zipMatch ? zipMatch[1] : null;
+    
+    const bedroomsText = card.querySelector('.card-text').textContent;
+    const bedroomsMatch = bedroomsText.match(/Bedrooms:\s*(\d+)/);
+    const bedrooms = bedroomsMatch ? bedroomsMatch[1] : 2;
+    
+    const priceText = card.querySelector('.card-text').textContent;
+    const priceMatch = priceText.match(/Price:\s*([^\n]+)/);
+    const price = priceMatch ? priceMatch[1].trim() : "N/A";
+    
+    if (zip) {
+      // Update county
+      const countyElement = card.querySelector('.county-data');
+      if (countyElement && countyElement.textContent === "Loading...") {
+        countyElement.textContent = getCountyByZip(zip);
+      }
+      
+      // Update rent
+      const rentElement = card.querySelector('.rent-data');
+      if (rentElement && (rentElement.textContent === "$Loading..." || rentElement.textContent === "$Calculating...")) {
+        const rentAmount = estimateRent(zip, bedrooms);
+        rentElement.textContent = `$${rentAmount !== "N/A" && rentAmount !== "Loading..." && rentAmount !== "Calculating..." ? rentAmount : rentAmount}`;
+      }
+      
+      // Update mortgage 
+      const mortgageElement = card.querySelector('.mortgage-data');
+      if (mortgageElement) {
+        const mortgagePayment = estimateMortgage(price);
+        mortgageElement.textContent = `$${mortgagePayment !== "N/A" ? mortgagePayment.toLocaleString() : mortgagePayment}`;
+      }
+      
+      // Update cashflow
+      const cashflowElement = card.querySelector('.cashflow-data');
+      if (cashflowElement && (cashflowElement.textContent.includes("Loading...") || cashflowElement.textContent.includes("Calculating..."))) {
+        const rentElement = card.querySelector('.rent-data');
+        const mortgageElement = card.querySelector('.mortgage-data');
+        const rentAmount = rentElement.textContent.replace('$', '');
+        const mortgagePayment = mortgageElement.textContent.replace('$', '');
+        const cashflow = calculateCashflow(rentAmount, mortgagePayment);
+        cashflowElement.innerHTML = cashflow;
+      }
+    }
   });
 }
 
@@ -352,32 +501,7 @@ function renderPagination(totalListings, currentPage) {
   `;
 }
 
-// --- Event Listeners ---
-
-window.addEventListener("DOMContentLoaded", async () => {
-  try {
-    grid.innerHTML = `<p class="text-center w-100">Loading properties and rent data...</p>`;
-    
-    await loadZipCodeDatabase();
-    
-    const counties = await loadCountyFipsMapping();
-    
-    await loadAllCountyRentData(counties);
-    
-    const propertyRes = await fetch("zillow_data.json");
-    if (!propertyRes.ok) throw new Error(`HTTP error ${propertyRes.status}`);
-    
-    const propertyData = await propertyRes.json();
-    allProperties = propertyData;
-    
-    filteredProperties = allProperties;
-    renderPropertiesPage(filteredProperties, 1);
-    renderPagination(filteredProperties.length, 1);
-  } catch (err) {
-    console.error("Failed to initialize app:", err);
-    grid.innerHTML = `<p class="text-center w-100 text-danger">Failed to load listings. Try again later.</p>`;
-  }
-});
+// --- EVENT LISTENERS ---
 
 form.addEventListener("submit", (e) => {
   e.preventDefault();
